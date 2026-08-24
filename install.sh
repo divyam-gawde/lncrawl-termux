@@ -2,109 +2,114 @@
 
 set -e
 
-REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-UBUNTU="ubuntu"
-VENV="/root/lncrawl-env"
+PIDFILE="$HOME/.lncrawl-server.pid"
+LOGFILE="$HOME/.lncrawl-server.log"
+PORT=8181
+URL="http://127.0.0.1:$PORT"
 
 echo "=========================================="
-echo "      LightNovel Crawler Installer"
+echo "       Starting LightNovel Crawler"
 echo "=========================================="
-echo
 
-# Must run in Termux
-if [ ! -d "/data/data/com.termux" ]; then
-    echo "ERROR: This installer must be run from Termux."
-    exit 1
+# Check whether server is already responding
+if curl -fsS --max-time 2 "$URL" >/dev/null 2>&1; then
+    echo
+    echo "🟢 lncrawl is already running."
+    echo
+    echo "URL: $URL"
+    exit 0
 fi
 
-echo "[1/7] Updating Termux..."
-pkg update -y
-pkg upgrade -y
+# Remove stale PID file
+if [ -f "$PIDFILE" ]; then
+    OLD_PID="$(cat "$PIDFILE" 2>/dev/null || true)"
 
-echo "[2/7] Installing required Termux packages..."
-pkg install -y proot-distro curl
-
-echo "[3/7] Installing Ubuntu 24.04..."
-
-if proot-distro list | grep -q "^ubuntu"; then
-    if [ -d "$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu" ]; then
-        echo "Ubuntu is already installed. Skipping."
-    else
-        proot-distro install ubuntu:24.04
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+        echo "⚠️ A previous lncrawl process appears to be running."
+        echo "PID: $OLD_PID"
+        exit 1
     fi
+
+    rm -f "$PIDFILE"
+fi
+
+echo "🔒 Acquiring wakelock..."
+
+if command -v termux-wake-lock >/dev/null 2>&1; then
+    termux-wake-lock
 else
-    proot-distro install ubuntu:24.04
+    echo "⚠️ termux-wake-lock is not available."
+    echo "   Server will still start."
 fi
 
-echo "[4/7] Setting up Ubuntu..."
+echo "🚀 Starting Ubuntu + lncrawl..."
 
-proot-distro login "$UBUNTU" -- bash -lc "
-set -e
+# Make sure the log file can be created
+touch "$LOGFILE"
 
-export DEBIAN_FRONTEND=noninteractive
+proot-distro login ubuntu -- bash -lc '
+source ~/lncrawl-env/bin/activate
+exec lncrawl -ll server --host 0.0.0.0 --port 8181
+' >"$LOGFILE" 2>&1 &
 
-apt update
-apt upgrade -y
+PID=$!
 
-apt install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    python3-dev \
-    build-essential \
-    curl \
-    ca-certificates
+echo "$PID" > "$PIDFILE"
 
-if [ ! -d '$VENV' ]; then
-    python3 -m venv '$VENV'
+echo "PID: $PID"
+echo "Log: $LOGFILE"
+echo "Waiting for server..."
+
+# Wait up to 60 seconds
+for i in $(seq 1 60); do
+
+    if curl -fsS --max-time 1 "$URL" >/dev/null 2>&1; then
+        echo
+        echo "=========================================="
+        echo "       🟢 SERVER IS RUNNING"
+        echo "=========================================="
+        echo
+        echo "URL: $URL"
+        echo "PID: $PID"
+        echo "Log: $LOGFILE"
+        echo
+        exit 0
+    fi
+
+    if ! kill -0 "$PID" 2>/dev/null; then
+        echo
+        echo "❌ lncrawl failed to start."
+        echo
+        echo "Last log output:"
+        if [ -f "$LOGFILE" ]; then
+            tail -n 30 "$LOGFILE"
+        else
+            echo "Log file was not created."
+        fi
+
+        rm -f "$PIDFILE"
+
+        if command -v termux-wake-unlock >/dev/null 2>&1; then
+            termux-wake-unlock
+        fi
+
+        exit 1
+    fi
+
+    printf "\r⏳ Starting... %2d/60" "$i"
+    sleep 1
+done
+
+echo
+echo
+echo "❌ Server did not respond within 60 seconds."
+echo
+echo "Last log output:"
+
+if [ -f "$LOGFILE" ]; then
+    tail -n 30 "$LOGFILE"
+else
+    echo "Log file was not created."
 fi
 
-source '$VENV/bin/activate'
-
-python -m pip install --upgrade pip setuptools wheel
-
-python -m pip install --upgrade lightnovel-crawler
-
-echo
-echo 'LightNovel Crawler version:'
-lncrawl version
-"
-
-echo "[5/7] Creating command directory..."
-
-mkdir -p "$HOME/bin"
-
-echo "[6/7] Installing management scripts..."
-
-cp "$REPO_DIR/start.sh" "$HOME/bin/start-lncrawl.sh"
-cp "$REPO_DIR/stop.sh" "$HOME/bin/stop-lncrawl.sh"
-cp "$REPO_DIR/status.sh" "$HOME/bin/status-lncrawl.sh"
-cp "$REPO_DIR/update.sh" "$HOME/bin/update-lncrawl.sh"
-
-chmod +x \
-    "$HOME/bin/start-lncrawl.sh" \
-    "$HOME/bin/stop-lncrawl.sh" \
-    "$HOME/bin/status-lncrawl.sh" \
-    "$HOME/bin/update-lncrawl.sh"
-
-echo "[7/7] Installation complete!"
-echo
-echo "=========================================="
-echo "          Installation Complete"
-echo "=========================================="
-echo
-echo "Start server:"
-echo "  ~/bin/start-lncrawl.sh"
-echo
-echo "Stop server:"
-echo "  ~/bin/stop-lncrawl.sh"
-echo
-echo "Check status:"
-echo "  ~/bin/status-lncrawl.sh"
-echo
-echo "Update lncrawl:"
-echo "  ~/bin/update-lncrawl.sh"
-echo
-echo "Server:"
-echo "  http://127.0.0.1:8181"
-echo
+exit 1
