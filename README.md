@@ -462,11 +462,3 @@ Created by divyam-gawde.
 Repository:
 
 https://github.com/divyam-gawde/lncrawl-termux
-
-### One important thing
-
-Your current GitHub README is **not just slightly malformed** — it is currently showing the HTML source from the webpage inside the Markdown file. That's why GitHub displays things like `<p>`, `<pre>`, `<div>`, and the CSS instead of giving you a clean README. 1
-
-So **replace the entire contents**, don't append this underneath the existing content.
-
-After saving, refresh the repository page. You should get a normal GitHub README with rendered headings, lists, links, and properly formatted terminal commands.2
