@@ -1,3 +1,5 @@
+```curl -fsSL https://raw.githubusercontent.com/divyam-gawde/lncrawl-termux/main/install.sh | bash```
+
 
 # 📚 lncrawl-termux
 
