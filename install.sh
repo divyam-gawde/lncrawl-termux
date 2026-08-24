@@ -22,13 +22,12 @@ pkg upgrade -y
 echo "[2/7] Installing required Termux packages..."
 pkg install -y proot-distro curl
 
-echo "[3/7] Checking Ubuntu 24.04..."
+echo "[3/7] Checking Ubuntu..."
 
-UBUNTU_ROOT="$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu"
-
-if [ -d "$UBUNTU_ROOT" ]; then
+if proot-distro login ubuntu -- true >/dev/null 2>&1; then
     echo "Ubuntu is already installed."
 else
+    echo "Ubuntu is not installed."
     echo "Installing Ubuntu 24.04..."
     proot-distro install ubuntu:24.04
 fi
@@ -64,7 +63,9 @@ source '$VENV/bin/activate'
 python -m pip install --upgrade pip setuptools wheel
 
 echo 'Installing LightNovel Crawler 4.14.0...'
-python -m pip install --upgrade 'lightnovel-crawler==4.14.0'
+
+python -m pip install --upgrade \
+    'lightnovel-crawler==4.14.0'
 
 echo
 echo 'LightNovel Crawler version:'
