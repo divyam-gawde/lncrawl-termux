@@ -3,6 +3,7 @@
 set -e
 
 PIDFILE="$HOME/.lncrawl-server.pid"
+LOGFILE="$HOME/.lncrawl-server.log"
 PORT=8181
 URL="http://127.0.0.1:$PORT"
 
@@ -10,7 +11,6 @@ echo "=========================================="
 echo "       Starting LightNovel Crawler"
 echo "=========================================="
 
-# Check whether server is already responding
 if curl -fsS --max-time 2 "$URL" >/dev/null 2>&1; then
     echo
     echo "🟢 lncrawl is already running."
@@ -19,12 +19,11 @@ if curl -fsS --max-time 2 "$URL" >/dev/null 2>&1; then
     exit 0
 fi
 
-# Remove stale PID file
 if [ -f "$PIDFILE" ]; then
     OLD_PID="$(cat "$PIDFILE" 2>/dev/null || true)"
 
     if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-        echo "⚠️  A previous lncrawl process appears to be running."
+        echo "⚠️ A previous lncrawl process appears to be running."
         echo "PID: $OLD_PID"
         exit 1
     fi
@@ -37,25 +36,26 @@ echo "🔒 Acquiring wakelock..."
 if command -v termux-wake-lock >/dev/null 2>&1; then
     termux-wake-lock
 else
-    echo "⚠️  termux-wake-lock is not available."
-    echo "   Server will still start."
+    echo "⚠️ termux-wake-lock is not available."
 fi
 
 echo "🚀 Starting Ubuntu + lncrawl..."
 
+touch "$LOGFILE"
+
 proot-distro login ubuntu -- bash -lc '
 source ~/lncrawl-env/bin/activate
 exec lncrawl -ll server --host 0.0.0.0 --port 8181
-' >/tmp/lncrawl-server.log 2>&1 &
+' >"$LOGFILE" 2>&1 &
 
 PID=$!
 
 echo "$PID" > "$PIDFILE"
 
 echo "PID: $PID"
+echo "Log: $LOGFILE"
 echo "Waiting for server..."
 
-# Wait up to 60 seconds
 for i in $(seq 1 60); do
 
     if curl -fsS --max-time 1 "$URL" >/dev/null 2>&1; then
@@ -65,22 +65,19 @@ for i in $(seq 1 60); do
         echo "=========================================="
         echo
         echo "URL: $URL"
-        echo
         echo "PID: $PID"
-        echo
-        echo "Logs:"
-        echo "  /tmp/lncrawl-server.log"
+        echo "Log: $LOGFILE"
         echo
         exit 0
     fi
 
-    # Make sure parent process hasn't died
     if ! kill -0 "$PID" 2>/dev/null; then
         echo
         echo "❌ lncrawl failed to start."
         echo
         echo "Last log output:"
-        tail -n 30 /tmp/lncrawl-server.log
+        tail -n 30 "$LOGFILE" 2>/dev/null || true
+
         rm -f "$PIDFILE"
 
         if command -v termux-wake-unlock >/dev/null 2>&1; then
@@ -99,6 +96,6 @@ echo
 echo "❌ Server did not respond within 60 seconds."
 echo
 echo "Last log output:"
-tail -n 30 /tmp/lncrawl-server.log
+tail -n 30 "$LOGFILE" 2>/dev/null || true
 
 exit 1
